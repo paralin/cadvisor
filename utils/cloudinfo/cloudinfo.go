@@ -86,3 +86,8 @@ func (self *realCloudInfo) GetInstanceType() info.InstanceType {
 func (self *realCloudInfo) GetInstanceID() info.InstanceID {
 	return self.instanceID
 }
+
+// TODO: Implement method.
+func onBaremetal() bool {
+	return false
+}

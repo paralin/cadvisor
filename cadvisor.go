@@ -37,11 +37,6 @@ import (
 	// Register container providers
 	_ "github.com/google/cadvisor/container/install"
 
-	// Register CloudProviders
-	_ "github.com/google/cadvisor/utils/cloudinfo/aws"
-	_ "github.com/google/cadvisor/utils/cloudinfo/azure"
-	_ "github.com/google/cadvisor/utils/cloudinfo/gce"
-
 	"k8s.io/klog"
 )
 
