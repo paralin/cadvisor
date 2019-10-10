@@ -32,9 +32,7 @@ import (
 	"github.com/google/cadvisor/container/containerd"
 	"github.com/google/cadvisor/container/crio"
 	"github.com/google/cadvisor/container/docker"
-	"github.com/google/cadvisor/container/mesos"
 	"github.com/google/cadvisor/container/raw"
-	"github.com/google/cadvisor/container/rkt"
 	"github.com/google/cadvisor/container/systemd"
 	"github.com/google/cadvisor/events"
 	"github.com/google/cadvisor/fs"
@@ -43,7 +41,6 @@ import (
 	"github.com/google/cadvisor/machine"
 	"github.com/google/cadvisor/manager/watcher"
 	rawwatcher "github.com/google/cadvisor/manager/watcher/raw"
-	rktwatcher "github.com/google/cadvisor/manager/watcher/rkt"
 	"github.com/google/cadvisor/utils/oomparser"
 	"github.com/google/cadvisor/utils/sysfs"
 	"github.com/google/cadvisor/version"
@@ -156,17 +153,10 @@ func New(memoryCache *memory.InMemoryCache, sysfs sysfs.SysFs, maxHousekeepingIn
 
 	var (
 		dockerStatus info.DockerStatus
-		rktPath      string
 	)
 	docker.SetTimeout(dockerClientTimeout)
 	// Try to connect to docker indefinitely on startup.
 	dockerStatus = retryDockerStatus()
-
-	if tmpRktPath, err := rkt.RktPath(); err != nil {
-		klog.V(5).Infof("Rkt not connected: %v", err)
-	} else {
-		rktPath = tmpRktPath
-	}
 
 	crioClient, err := crio.Client()
 	if err != nil {
@@ -183,7 +173,6 @@ func New(memoryCache *memory.InMemoryCache, sysfs sysfs.SysFs, maxHousekeepingIn
 			Driver:       dockerStatus.Driver,
 			DriverStatus: dockerStatus.DriverStatus,
 		},
-		RktPath: rktPath,
 		Crio: fs.CrioContext{
 			Root: crioInfo.StorageRoot,
 		},
@@ -302,17 +291,6 @@ func (self *manager) Start() error {
 		klog.V(5).Infof("Registration of the Docker container factory failed: %v.", err)
 	}
 
-	err = rkt.Register(self, self.fsInfo, self.includedMetrics)
-	if err != nil {
-		klog.V(5).Infof("Registration of the rkt container factory failed: %v", err)
-	} else {
-		watcher, err := rktwatcher.NewRktContainerWatcher()
-		if err != nil {
-			return err
-		}
-		self.containerWatchers = append(self.containerWatchers, watcher)
-	}
-
 	err = containerd.Register(self, self.fsInfo, self.includedMetrics)
 	if err != nil {
 		klog.V(5).Infof("Registration of the containerd container factory failed: %v", err)
@@ -321,11 +299,6 @@ func (self *manager) Start() error {
 	err = crio.Register(self, self.fsInfo, self.includedMetrics)
 	if err != nil {
 		klog.V(5).Infof("Registration of the crio container factory failed: %v", err)
-	}
-
-	err = mesos.Register(self, self.fsInfo, self.includedMetrics)
-	if err != nil {
-		klog.V(5).Infof("Registration of the mesos container factory failed: %v", err)
 	}
 
 	err = systemd.Register(self, self.fsInfo, self.includedMetrics)
@@ -944,7 +917,7 @@ func (m *manager) registerCollectors(collectorConfigs map[string]string, cont *c
 
 // Enables overwriting an existing containerData/Handler object for a given containerName.
 // Can't use createContainer as it just returns if a given containerName has a handler already.
-// Ex: rkt handler will want to take priority over the raw handler, but the raw handler might be created first.
+// Ex: docker handler will want to take priority over the raw handler, but the raw handler might be created first.
 
 // Only allow raw handler to be overridden
 func (m *manager) overrideContainer(containerName string, watchSource watcher.ContainerWatchSource) error {
@@ -1199,13 +1172,7 @@ func (self *manager) watchForNewContainers(quit chan error) error {
 			case event := <-self.eventsChannel:
 				switch {
 				case event.EventType == watcher.ContainerAdd:
-					switch event.WatchSource {
-					// the Rkt and Raw watchers can race, and if Raw wins, we want Rkt to override and create a new handler for Rkt containers
-					case watcher.Rkt:
-						err = self.overrideContainer(event.Name, event.WatchSource)
-					default:
-						err = self.createContainer(event.Name, event.WatchSource)
-					}
+					err = self.createContainer(event.Name, event.WatchSource)
 				case event.EventType == watcher.ContainerDelete:
 					err = self.destroyContainer(event.Name)
 				}
