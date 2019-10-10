@@ -912,6 +912,9 @@ func (m *manager) createContainerLocked(containerName string, watchSource watche
 		return err
 	}
 
+	// cjs: removed nvidia
+	klog.V(4).Infof("GPU metrics may be unavailable/incomplete for container %q: %v", cont.info.Name, err)
+
 	// Add collectors
 	labels := handler.GetContainerLabels()
 	collectorConfigs := collector.GetCollectorConfigs(labels)
